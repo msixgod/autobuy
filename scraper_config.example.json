@@ -1,0 +1,37 @@
+{
+  "start_urls": [
+    "https://quotes.toscrape.com/"
+  ],
+  "item_selector": ".quote",
+  "fields": {
+    "text": {
+      "selector": ".text::text",
+      "type": "text"
+    },
+    "author": {
+      "selector": ".author::text",
+      "type": "text"
+    },
+    "tags": {
+      "selector": ".tags .tag::text",
+      "type": "list"
+    }
+  },
+  "next_page_selector": ".next a",
+  "next_page_attr": "href",
+  "max_pages": 3,
+  "request": {
+    "mode": "fetch",
+    "impersonate": "chrome",
+    "headless": false,
+    "network_idle": false,
+    "timeout": 30000,
+    "adaptive": false,
+    "headers": {}
+  },
+  "output": {
+    "path": "output.json",
+    "indent": 2,
+    "ensure_ascii": false
+  }
+}

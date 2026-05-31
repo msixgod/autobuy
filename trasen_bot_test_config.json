@@ -1,0 +1,42 @@
+{
+  "base_url": "https://wis2.trasen.womei.org/api/",
+  "appid": "REPLACE_WITH_TRASEN_APP_ID",
+  "app_secret": "REPLACE_WITH_TRASEN_APP_SECRET",
+  "aes_key": "REPLACE_WITH_TRASEN_AES_KEY",
+  "test_uid": "250915",
+  "org_code": "6509A1409AC641BCB85062A644F811B8",
+  "token": "",
+  "target": {
+    "hosp_region_name": "",
+    "hosp_region_code": "6161BB66D01E4983B865987291E25D8C",
+    "department_name": "",
+    "department_code": "345",
+    "doctor_name": "",
+    "doctor_code": "42",
+    "register_date": "2026-06-05",
+    "noon": 1,
+    "start_time": "08:30",
+    "end_time": "",
+    "isfz": 0
+  },
+  "watch": {
+    "poll_interval_seconds": 3,
+    "max_attempts": 1,
+    "alert_only": true
+  },
+  "patient": {
+    "campus_org_id": "",
+    "campus_region_id": "",
+    "pat_id": "",
+    "pat_card_id": "",
+    "name": "",
+    "certificate_no": "",
+    "card_id": "",
+    "card_no": "",
+    "card_type": 3,
+    "bind_if_needed": true
+  },
+  "output": {
+    "log_path": "trasen_bot.log"
+  }
+}

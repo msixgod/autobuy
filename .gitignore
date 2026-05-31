@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+node_modules/
+dist/
+.env
+*.log
+*.pyc
+tmp_*.js
+tmp_*.html
+trasen_config.json
+trasen_bot_config.json
+trasen_capture.jsonl
+trasen_capture_decoded.json
+trasen_capture_summary.json
+trasen_bot.log
+trasen_output.json

@@ -1,0 +1,44 @@
+{
+  "name": "autobuy-desktop",
+  "version": "0.1.0",
+  "description": "Desktop app for Trasen traffic capture and auto-booking",
+  "main": "src/main/main.js",
+  "author": "OpenAI Codex",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win nsis",
+    "build:mac": "electron-builder --mac dmg"
+  },
+  "dependencies": {
+    "http-mitm-proxy": "^1.1.0"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "org.autobuy.desktop",
+    "productName": "AutoBuy Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.utilities"
+    }
+  }
+}

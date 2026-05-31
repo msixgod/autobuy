@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoBuy Desktop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">AB</div>
+          <div>
+            <h1>AutoBuy Desktop</h1>
+            <p>微信环境会话采集、号源监听与自动锁号桌面端</p>
+          </div>
+        </div>
+
+        <div class="status-card">
+          <h2>当前状态</h2>
+          <div class="meta-list" id="global-status"></div>
+        </div>
+
+        <div class="status-card">
+          <h2>使用顺序</h2>
+          <p>1. 启动内置抓包内核</p>
+          <p>2. 信任证书并设置系统代理</p>
+          <p>3. 在 PC 微信里打开挂号页面并操作一次</p>
+          <p>4. 自动采集医生、就诊人和卡信息</p>
+          <p>5. 选择目标条件并开始监听或自动锁号</p>
+        </div>
+      </aside>
+
+      <main class="main-layout">
+        <section class="hero">
+          <div>
+            <span class="eyebrow">Cross-platform desktop workflow</span>
+            <h2>把抓包、会话提取、排班监听和下单锁号合成一个桌面 App</h2>
+            <p>
+              当前实现基于 Electron + 内置 HTTPS 代理内核。Windows 版已经完成本地打包，
+              macOS 版已经带上打包配置与证书处理代码，后续只需要在 Mac 上执行正式构建。
+            </p>
+          </div>
+          <div class="hero-actions">
+            <button class="primary-btn" id="open-wechat-page">打开挂号页面</button>
+            <button class="ghost-btn" id="refresh-all">刷新状态</button>
+          </div>
+        </section>
+
+        <section class="panel-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>1. 内置抓包内核</h3>
+              <span id="proxy-pill" class="pill pill-idle">未启动</span>
+            </div>
+            <div class="two-col">
+              <label>
+                <span>监听地址</span>
+                <input id="proxy-host" type="text" />
+              </label>
+              <label>
+                <span>监听端口</span>
+                <input id="proxy-port" type="number" min="1" />
+              </label>
+            </div>
+            <div class="button-row">
+              <button class="primary-btn" id="proxy-start">启动抓包</button>
+              <button class="ghost-btn" id="proxy-stop">停止抓包</button>
+              <button class="ghost-btn" id="proxy-clear">清空记录</button>
+            </div>
+            <div class="button-row">
+              <button class="secondary-btn" id="trust-cert">信任证书</button>
+              <button class="secondary-btn" id="enable-system-proxy">启用系统代理</button>
+              <button class="secondary-btn" id="disable-system-proxy">关闭系统代理</button>
+            </div>
+            <div class="button-row">
+              <button class="secondary-btn" id="reveal-cert">打开证书位置</button>
+              <button class="secondary-btn" id="open-proxy-settings">打开系统代理设置</button>
+            </div>
+            <div class="info-box" id="proxy-status"></div>
+            <div class="log-box" id="proxy-log"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>2. 会话与资料提取</h3>
+              <span id="session-pill" class="pill pill-idle">未捕获</span>
+            </div>
+            <div class="summary-grid">
+              <div class="summary-item">
+                <strong id="summary-token-count">0</strong>
+                <span>Token</span>
+              </div>
+              <div class="summary-item">
+                <strong id="summary-patient-count">0</strong>
+                <span>就诊人</span>
+              </div>
+              <div class="summary-item">
+                <strong id="summary-card-count">0</strong>
+                <span>就诊卡</span>
+              </div>
+              <div class="summary-item">
+                <strong id="summary-doctor-count">0</strong>
+                <span>医生</span>
+              </div>
+            </div>
+            <div class="field-stack">
+              <label>
+                <span>当前可用 Token</span>
+                <textarea id="token-preview" rows="3" readonly></textarea>
+              </label>
+              <label>
+                <span>当前可用 orgCode</span>
+                <textarea id="orgcode-preview" rows="2" readonly></textarea>
+              </label>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel booking-panel">
+          <div class="panel-head">
+            <h3>3. 自动锁号任务</h3>
+            <span id="booking-pill" class="pill pill-idle">空闲</span>
+          </div>
+          <div class="form-grid">
+            <label>
+              <span>科室 / 门诊部</span>
+              <select id="department-select"></select>
+            </label>
+            <label>
+              <span>医生</span>
+              <select id="doctor-select"></select>
+            </label>
+            <label>
+              <span>就诊人</span>
+              <select id="patient-select"></select>
+            </label>
+            <label>
+              <span>就诊卡</span>
+              <select id="card-select"></select>
+            </label>
+            <label>
+              <span>日期模式</span>
+              <select id="date-mode">
+                <option value="earliest">最早可约</option>
+                <option value="specific">指定日期</option>
+              </select>
+            </label>
+            <label>
+              <span>指定日期</span>
+              <input id="register-date" type="date" />
+            </label>
+            <label>
+              <span>结束日期</span>
+              <input id="end-date" type="date" />
+            </label>
+            <label>
+              <span>时段</span>
+              <select id="noon-select">
+                <option value="1">上午</option>
+                <option value="2">下午</option>
+                <option value="4">全天</option>
+              </select>
+            </label>
+            <label>
+              <span>开始时间</span>
+              <input id="start-time" type="text" placeholder="留空表示该时段最早可约时间" />
+            </label>
+            <label>
+              <span>轮询秒数</span>
+              <input id="poll-interval" type="number" min="1" />
+            </label>
+            <label class="checkbox-label">
+              <input id="alert-only" type="checkbox" />
+              <span>只提醒，不自动下单</span>
+            </label>
+          </div>
+          <div class="button-row">
+            <button class="primary-btn" id="booking-start">开始监听</button>
+            <button class="ghost-btn" id="booking-stop">停止任务</button>
+            <button class="secondary-btn" id="save-task">保存配置</button>
+          </div>
+          <div class="hit-box" id="booking-hit">暂无命中记录</div>
+          <div class="log-box tall" id="booking-log"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

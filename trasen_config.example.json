@@ -1,0 +1,18 @@
+{
+  "base_url": "https://wis2.trasen.womei.org/api/",
+  "appid": "REPLACE_WITH_TRASEN_APP_ID",
+  "app_secret": "REPLACE_WITH_TRASEN_APP_SECRET",
+  "aes_key": "REPLACE_WITH_TRASEN_AES_KEY",
+  "test_uid": "250915",
+  "org_code": "",
+  "token": "",
+  "department_region_ids": [
+    "6509A1409AC641BCB85062A644F811B8",
+    "6161BB66D01E4983B865987291E25D8C"
+  ],
+  "output": {
+    "path": "trasen_output.json",
+    "indent": 2,
+    "ensure_ascii": false
+  }
+}
