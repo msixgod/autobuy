@@ -87,7 +87,11 @@ class BookingService extends EventEmitter {
             return { row, slot, alertOnly: true };
           }
 
-          const order = await this.createOrder(task, row, slot);
+          const order = await this.tryCreateOrder(task, row, slot);
+          if (!order) {
+            await waitMs(Math.max(1, Number(task.pollIntervalSeconds) || 3) * 1000);
+            continue;
+          }
           const paymentUrl =
             "http://cskq.trasen.womei.org/v2/weChat/html/cashier/regPay.html?platformOrderNum=" +
             encodeURIComponent(order.platformOrderNum || "");
@@ -245,6 +249,19 @@ class BookingService extends EventEmitter {
     };
     return (await this.apiCall(task, "bz/appointment/order", payload)).data || {};
   }
+
+  async tryCreateOrder(task, row, slot) {
+    try {
+      return await this.createOrder(task, row, slot);
+    } catch (error) {
+      const message = error?.message || String(error);
+      if (isRetryableOrderError(message)) {
+        this.emit("log", "Order not ready, keep watching: " + message);
+        return null;
+      }
+      throw error;
+    }
+  }
 }
 
 function waitMs(ms) {
@@ -267,6 +284,21 @@ function noonText(value) {
     default:
       return "unknown";
   }
+}
+
+function isRetryableOrderError(message) {
+  return [
+    "仅可预约三日内",
+    "未放号",
+    "暂未放号",
+    "暂无号源",
+    "号源已满",
+    "已约满",
+    "不可预约",
+    "不在预约时间",
+    "预约时间未到",
+    "请稍后再试"
+  ].some((text) => String(message || "").includes(text));
 }
 
 module.exports = { BookingService };
