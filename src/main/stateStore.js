@@ -29,6 +29,7 @@ class StateStore {
         host: "127.0.0.1",
         port: 8080
       },
+      sessionData: null,
       booking: {
         departmentName: "",
         doctorKey: "",
@@ -39,6 +40,7 @@ class StateStore {
         endDate: "",
         noon: "1",
         startTime: "",
+        startAt: "",
         pollIntervalSeconds: 3,
         alertOnly: true
       }

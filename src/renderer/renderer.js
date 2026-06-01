@@ -9,6 +9,8 @@ const state = {
 };
 
 const refs = {};
+let scheduledBookingTimer = null;
+let metadataRefreshInFlight = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -35,6 +37,7 @@ function bindRefs() {
   refs.summaryCardCount = $("summary-card-count");
   refs.summaryDoctorCount = $("summary-doctor-count");
   refs.tokenPreview = $("token-preview");
+  refs.tokenExpiry = $("token-expiry");
   refs.orgcodePreview = $("orgcode-preview");
   refs.departmentSelect = $("department-select");
   refs.doctorSelect = $("doctor-select");
@@ -45,6 +48,7 @@ function bindRefs() {
   refs.endDate = $("end-date");
   refs.noonSelect = $("noon-select");
   refs.startTime = $("start-time");
+  refs.startAt = $("start-at");
   refs.pollInterval = $("poll-interval");
   refs.alertOnly = $("alert-only");
   refs.bookingLog = $("booking-log");
@@ -53,21 +57,19 @@ function bindRefs() {
 
 function bindActions() {
   $("refresh-all").addEventListener("click", refreshAll);
-  $("open-wechat-page").addEventListener("click", () =>
-    window.desktopApi.openExternal("http://cskq.trasen.womei.org/v2/weChat/html/register/kqyyRegister.html")
-  );
 
-  $("proxy-start").addEventListener("click", async () => {
+  $("proxy-start-all").addEventListener("click", async () => {
     try {
       const payload = {
         host: refs.proxyHost.value.trim() || "127.0.0.1",
         port: Number(refs.proxyPort.value || 8080)
       };
       await window.desktopApi.updateSection("proxy", payload);
-      state.proxy = await window.desktopApi.startProxy(payload);
+      appendLog(refs.proxyLog, "正在启动抓包、信任证书并启用系统代理。");
+      state.proxy = await window.desktopApi.startProxyAll(payload);
       renderProxy();
     } catch (error) {
-      appendLog(refs.proxyLog, "启动抓包失败: " + formatError(error));
+      appendLog(refs.proxyLog, "启动采集环境失败: " + formatError(error));
     }
   });
 
@@ -76,7 +78,7 @@ function bindActions() {
       state.proxy = await window.desktopApi.stopProxy();
       renderProxy();
     } catch (error) {
-      appendLog(refs.proxyLog, "停止抓包失败: " + formatError(error));
+      appendLog(refs.proxyLog, "停止采集环境失败: " + formatError(error));
     }
   });
 
@@ -92,37 +94,62 @@ function bindActions() {
     }
   });
 
-  $("trust-cert").addEventListener("click", async () => {
+  $("clear-cache").addEventListener("click", async () => {
     try {
-      await window.desktopApi.trustCertificate();
-      appendLog(refs.proxyLog, "证书信任命令已经执行。");
-    } catch (error) {
-      appendLog(refs.proxyLog, "证书信任失败: " + formatError(error));
-    }
-  });
-
-  $("enable-system-proxy").addEventListener("click", async () => {
-    try {
-      await window.desktopApi.enableSystemProxy();
-      state.proxy = await window.desktopApi.getState().then((snapshot) => snapshot.proxy);
+      clearScheduledBooking();
+      const snapshot = await window.desktopApi.clearCache();
+      state.persisted = snapshot.persisted || { proxy: {}, booking: {} };
+      state.proxy = snapshot.proxy || null;
+      state.session = snapshot.session || null;
+      state.booking = snapshot.booking || null;
+      refs.proxyLog.textContent = "";
+      refs.bookingLog.textContent = "";
+      refs.bookingHit.textContent = "暂无命中记录";
+      hydratePersisted();
+      renderGlobalStatus();
       renderProxy();
+      renderSession();
+      renderBookingOptions();
+      renderBookingStatus(state.booking?.running);
+      appendLog(refs.proxyLog, "缓存已清空。");
     } catch (error) {
-      appendLog(refs.proxyLog, "启用系统代理失败: " + formatError(error));
+      appendLog(refs.proxyLog, "清空缓存失败: " + formatError(error));
     }
   });
 
-  $("disable-system-proxy").addEventListener("click", async () => {
+  $("session-export").addEventListener("click", async () => {
     try {
-      await window.desktopApi.disableSystemProxy();
-      state.proxy = await window.desktopApi.getState().then((snapshot) => snapshot.proxy);
-      renderProxy();
+      const result = await window.desktopApi.exportSession();
+      if (!result?.canceled) {
+        appendLog(refs.bookingLog, "会话文件已导出: " + result.filePath);
+      }
     } catch (error) {
-      appendLog(refs.proxyLog, "关闭系统代理失败: " + formatError(error));
+      appendLog(refs.bookingLog, "导出会话文件失败: " + formatError(error));
     }
   });
 
-  $("reveal-cert").addEventListener("click", () => window.desktopApi.revealCertificate());
-  $("open-proxy-settings").addEventListener("click", () => window.desktopApi.openProxySettings());
+  $("session-import").addEventListener("click", async () => {
+    try {
+      const result = await window.desktopApi.importSession();
+      if (!result?.canceled) {
+        state.session = result.session;
+        renderSession();
+        renderBookingOptions();
+        appendLog(refs.bookingLog, "会话文件已导入: " + result.filePath);
+        refreshSessionMetadata({ doctors: true });
+      }
+    } catch (error) {
+      appendLog(refs.bookingLog, "导入会话文件失败: " + formatError(error));
+    }
+  });
+
+  $("session-refresh-metadata").addEventListener("click", () => {
+    const doctor = getSelectedDoctor();
+    refreshSessionMetadata({
+      doctors: true,
+      doctor: doctor ? pickDoctorMetadata(doctor) : null
+    });
+  });
 
   refs.departmentSelect.addEventListener("change", async () => {
     await persistBookingSection({ departmentName: refs.departmentSelect.value, doctorKey: "" });
@@ -132,6 +159,10 @@ function bindActions() {
   refs.doctorSelect.addEventListener("change", async () => {
     await persistBookingSection({ doctorKey: refs.doctorSelect.value });
     renderBookingOptions();
+    const doctor = getSelectedDoctor();
+    if (doctor && (!state.session?.patients?.length || !state.session?.cards?.length)) {
+      refreshSessionMetadata({ doctors: false, doctor: pickDoctorMetadata(doctor) });
+    }
   });
 
   refs.patientSelect.addEventListener("change", async () => {
@@ -145,6 +176,7 @@ function bindActions() {
   refs.endDate.addEventListener("change", () => persistBookingSection({ endDate: refs.endDate.value }));
   refs.noonSelect.addEventListener("change", () => persistBookingSection({ noon: refs.noonSelect.value }));
   refs.startTime.addEventListener("input", () => persistBookingSection({ startTime: refs.startTime.value.trim() }));
+  refs.startAt.addEventListener("change", () => persistBookingSection({ startAt: refs.startAt.value }));
   refs.pollInterval.addEventListener("change", () =>
     persistBookingSection({ pollIntervalSeconds: Number(refs.pollInterval.value || 3) })
   );
@@ -159,12 +191,7 @@ function bindActions() {
     try {
       const task = buildTaskPayload();
       await persistBookingSection(task.persistOnly);
-      renderBookingStatus(true);
-      appendLog(refs.bookingLog, "开始监听目标号源。");
-      window.desktopApi.startBooking(task.runtimeOnly).catch((error) => {
-        appendLog(refs.bookingLog, "自动任务失败: " + formatError(error));
-        renderBookingStatus(false);
-      });
+      scheduleBookingStart(task.runtimeOnly, task.persistOnly.startAt);
     } catch (error) {
       appendLog(refs.bookingLog, "启动任务失败: " + formatError(error));
     }
@@ -172,6 +199,7 @@ function bindActions() {
 
   $("booking-stop").addEventListener("click", async () => {
     try {
+      clearScheduledBooking();
       await window.desktopApi.stopBooking();
       renderBookingStatus(false);
     } catch (error) {
@@ -247,6 +275,7 @@ function hydratePersisted() {
   refs.endDate.value = persisted.booking?.endDate || "";
   refs.noonSelect.value = persisted.booking?.noon || "1";
   refs.startTime.value = persisted.booking?.startTime || "";
+  refs.startAt.value = persisted.booking?.startAt || "";
   refs.pollInterval.value = String(persisted.booking?.pollIntervalSeconds || 3);
   refs.alertOnly.checked = !!persisted.booking?.alertOnly;
 }
@@ -254,12 +283,19 @@ function hydratePersisted() {
 function renderGlobalStatus() {
   const token = state.session?.tokensSeen?.[0] || "未捕获";
   const orgCode = state.session?.orgCodesSeen?.[0] || "未捕获";
+  const tokenExpiry = getTokenExpiryText();
+  const hasApiConfig =
+    !!state.session?.appIdsSeen?.length &&
+    !!state.session?.appSecretsSeen?.length &&
+    !!state.session?.aesKeysSeen?.length;
   const lines = [
     { label: "抓包内核", value: state.proxy?.running ? "运行中" : "未启动" },
     { label: "系统代理", value: state.proxy?.systemProxy?.enabled ? "已启用" : "未启用" },
     { label: "证书路径", value: state.proxy?.certPath || "-" },
-    { label: "会话 Token", value: token },
-    { label: "orgCode", value: orgCode }
+    { label: "会话 Token", value: maskToken(token) },
+    { label: "Token 过期", value: tokenExpiry || "-" },
+    { label: "orgCode", value: orgCode },
+    { label: "接口配置", value: hasApiConfig ? "已捕获" : "未完整" }
   ];
   refs.globalStatus.innerHTML = lines
     .map((line) => `<div><span>${escapeHtml(line.label)}</span><strong>${escapeHtml(line.value)}</strong></div>`)
@@ -289,6 +325,7 @@ function renderSession() {
   refs.summaryCardCount.textContent = String(session.cards.length);
   refs.summaryDoctorCount.textContent = String(session.doctors.length);
   refs.tokenPreview.value = session.tokensSeen.join("\n");
+  refs.tokenExpiry.value = getTokenExpiryText();
   refs.orgcodePreview.value = session.orgCodesSeen.join("\n");
   renderGlobalStatus();
 }
@@ -299,16 +336,21 @@ function renderBookingOptions() {
 
   populateSelect(
     refs.departmentSelect,
-    unique(session.doctors.map((doctor) => doctor.deptName)).map((name) => ({ value: name, label: name })),
+    uniqueByKey(session.doctors, departmentKeyOf)
+      .map((doctor) => ({
+        value: departmentKeyOf(doctor),
+        label: departmentLabelOf(doctor)
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "zh-CN")),
     booking.departmentName,
-    "请选择科室 / 门诊部"
+    "请选择院区 / 门诊部 / 科室"
   );
 
   const doctorOptions = session.doctors
-    .filter((doctor) => !booking.departmentName || doctor.deptName === booking.departmentName)
+    .filter((doctor) => !booking.departmentName || departmentKeyOf(doctor) === booking.departmentName)
     .map((doctor) => ({
       value: doctorKeyOf(doctor),
-      label: `${doctor.doctorName} | ${doctor.levelName || "医生"} | ${doctor.deptName}`
+      label: doctorNameOf(doctor)
     }));
   populateSelect(refs.doctorSelect, doctorOptions, booking.doctorKey, "请选择医生");
 
@@ -325,6 +367,37 @@ function renderBookingOptions() {
       label: `${cardTypeLabel(card.cardType)} | ${card.cardNoMasked || card.cardNo || ""}`
     }));
   populateSelect(refs.cardSelect, cardOptions, booking.cardId, "请选择就诊卡");
+}
+
+async function refreshSessionMetadata(payload) {
+  if (metadataRefreshInFlight) {
+    return;
+  }
+  if (!state.session?.tokensSeen?.length) {
+    appendLog(refs.bookingLog, "没有 token，无法刷新医生和就诊人资料。");
+    return;
+  }
+
+  metadataRefreshInFlight = true;
+  try {
+    appendLog(refs.bookingLog, "正在通过已捕获登录态刷新医生和就诊人资料。");
+    state.session = await window.desktopApi.refreshSessionMetadata(payload || { doctors: true });
+    renderSession();
+    renderBookingOptions();
+    appendLog(
+      refs.bookingLog,
+      "资料刷新完成: 医生 " +
+        String(state.session?.doctors?.length || 0) +
+        " / 就诊人 " +
+        String(state.session?.patients?.length || 0) +
+        " / 就诊卡 " +
+        String(state.session?.cards?.length || 0)
+    );
+  } catch (error) {
+    appendLog(refs.bookingLog, "刷新资料失败: " + formatError(error));
+  } finally {
+    metadataRefreshInFlight = false;
+  }
 }
 
 function renderBookingStatus(running) {
@@ -347,6 +420,34 @@ function unique(values) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b, "zh-CN"));
 }
 
+function uniqueByKey(items, keyOf) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items || []) {
+    const key = keyOf(item);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function departmentKeyOf(doctor) {
+  return [doctor.hospRegionCode, doctor.hospRegionName, doctor.deptId, doctor.deptCode, doctor.deptName].join("|");
+}
+
+function departmentLabelOf(doctor) {
+  return [doctor.hospRegionName, doctor.deptName]
+    .filter(Boolean)
+    .join(" / ") || "已访问科室";
+}
+
+function doctorNameOf(doctor) {
+  return doctor.doctorName || "医生姓名待刷新";
+}
+
 function doctorKeyOf(doctor) {
   return [doctor.doctorCode, doctor.deptCode, doctor.hospRegionCode, doctor.doctorId].join("|");
 }
@@ -354,6 +455,17 @@ function doctorKeyOf(doctor) {
 function getSelectedDoctor() {
   const key = state.persisted?.booking?.doctorKey;
   return state.session?.doctors?.find((doctor) => doctorKeyOf(doctor) === key) || null;
+}
+
+function pickDoctorMetadata(doctor) {
+  return {
+    doctorId: doctor.doctorId,
+    doctorCode: doctor.doctorCode,
+    deptId: doctor.deptId,
+    deptCode: doctor.deptCode,
+    hospRegionCode: doctor.hospRegionCode,
+    orgId: doctor.hospRegionCode
+  };
 }
 
 function readBookingForm() {
@@ -367,6 +479,7 @@ function readBookingForm() {
     endDate: refs.endDate.value,
     noon: refs.noonSelect.value,
     startTime: refs.startTime.value.trim(),
+    startAt: refs.startAt.value,
     pollIntervalSeconds: Number(refs.pollInterval.value || 3),
     alertOnly: refs.alertOnly.checked
   };
@@ -376,6 +489,9 @@ function buildTaskPayload() {
   const booking = readBookingForm();
   const doctor = state.session?.doctors?.find((item) => doctorKeyOf(item) === booking.doctorKey);
   if (!doctor) {
+    if (!state.session?.doctors?.length) {
+      throw new Error("还没有医生列表。请先启动采集环境，并在 PC 微信里进入目标医生页面。");
+    }
     throw new Error("请先选择医生。");
   }
 
@@ -384,7 +500,7 @@ function buildTaskPayload() {
   if (!token) {
     throw new Error("还没有捕获到 token，请先启动抓包并在 PC 微信里打开页面。");
   }
-  if (!booking.patientId || !booking.cardId) {
+  if (!booking.alertOnly && (!booking.patientId || !booking.cardId)) {
     throw new Error("请选择就诊人和就诊卡。");
   }
 
@@ -408,6 +524,44 @@ function buildTaskPayload() {
       alertOnly: booking.alertOnly
     }
   };
+}
+
+function scheduleBookingStart(runtimeTask, startAtValue) {
+  clearScheduledBooking();
+
+  const startAt = startAtValue ? new Date(startAtValue) : null;
+  const delayMs = startAt && !Number.isNaN(startAt.getTime()) ? startAt.getTime() - Date.now() : 0;
+
+  if (delayMs > 0) {
+    scheduledBookingTimer = window.setTimeout(() => {
+      scheduledBookingTimer = null;
+      startBookingNow(runtimeTask);
+    }, delayMs);
+    renderBookingStatus(false);
+    refs.bookingPill.textContent = "等待启动";
+    refs.bookingPill.className = "pill pill-active";
+    appendLog(refs.bookingLog, "已预约监听启动时间: " + startAt.toLocaleString("zh-CN", { hour12: false }));
+    return;
+  }
+
+  startBookingNow(runtimeTask);
+}
+
+function startBookingNow(runtimeTask) {
+  renderBookingStatus(true);
+  appendLog(refs.bookingLog, "开始监听目标号源。");
+  window.desktopApi.startBooking(runtimeTask).catch((error) => {
+    appendLog(refs.bookingLog, "自动任务失败: " + formatError(error));
+    renderBookingStatus(false);
+  });
+}
+
+function clearScheduledBooking() {
+  if (scheduledBookingTimer) {
+    window.clearTimeout(scheduledBookingTimer);
+    scheduledBookingTimer = null;
+    appendLog(refs.bookingLog, "已取消预约监听。");
+  }
 }
 
 async function persistBookingSection(payload) {
@@ -434,6 +588,63 @@ function escapeHtml(value) {
 
 function formatError(error) {
   return error?.message || String(error);
+}
+
+function maskToken(token) {
+  const value = String(token || "");
+  if (!value || value === "未捕获") {
+    return value || "未捕获";
+  }
+  return value.slice(0, 6) + "..." + value.slice(-4);
+}
+
+function getTokenExpiryText() {
+  const session = state.session || {};
+  const firstToken = session.tokensSeen?.[0] || "";
+  const detail = session.tokenDetails?.find((item) => item.token === firstToken);
+  const expIso = detail?.jwt?.expIso || decodeJwtExpiry(firstToken);
+  if (!expIso) {
+    return "";
+  }
+
+  const date = new Date(expIso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const seconds = Math.floor((date.getTime() - Date.now()) / 1000);
+  const remaining = seconds > 0 ? "剩余 " + formatDuration(seconds) : "已过期";
+  return date.toLocaleString("zh-CN", { hour12: false }) + " (" + remaining + ")";
+}
+
+function decodeJwtExpiry(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) {
+    return "";
+  }
+  try {
+    let payloadText = parts[1].replaceAll("-", "+").replaceAll("_", "/");
+    while (payloadText.length % 4) {
+      payloadText += "=";
+    }
+    const payload = JSON.parse(atob(payloadText));
+    return payload.exp ? new Date(Number(payload.exp) * 1000).toISOString() : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function formatDuration(totalSeconds) {
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (days > 0) {
+    return days + "天" + hours + "小时";
+  }
+  if (hours > 0) {
+    return hours + "小时" + minutes + "分钟";
+  }
+  return Math.max(0, minutes) + "分钟";
 }
 
 function cardTypeLabel(type) {

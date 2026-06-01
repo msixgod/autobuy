@@ -1,18 +1,12 @@
 const { EventEmitter } = require("node:events");
-const {
-  APP_ID,
-  APP_SECRET,
-  ensureCryptoConfigured,
-  encryptPayload,
-  decryptPayload,
-  requestSign
-} = require("./trasenCrypto");
+const { getConfig, ensureCryptoConfigured, encryptPayload, decryptPayload, requestSign } = require("./trasenCrypto");
 
 class BookingService extends EventEmitter {
-  constructor() {
+  constructor(options = {}) {
     super();
     this.running = false;
     this.abort = false;
+    this.executeInPage = options.executeInPage || null;
   }
 
   getStatus() {
@@ -128,7 +122,20 @@ class BookingService extends EventEmitter {
   }
 
   async apiCall(task, apiPath, payload) {
-    ensureCryptoConfigured();
+    try {
+      ensureCryptoConfigured();
+    } catch (error) {
+      if (this.executeInPage) {
+        this.emit("log", "Using open WeChat page to call API: " + apiPath);
+        const data = await this.executeInPage(apiPath, payload);
+        if (data?.code !== 0) {
+          throw new Error(data?.message || apiPath + " failed in page");
+        }
+        return data;
+      }
+      throw error;
+    }
+    const { appId, appSecret } = getConfig();
     const bodyText = JSON.stringify(payload);
     const encryptedBody = encryptPayload(bodyText);
     const sign = requestSign(bodyText, task.orgCode);
@@ -138,8 +145,8 @@ class BookingService extends EventEmitter {
       headers: {
         "Content-Type": "application/json;charset=UTF-8",
         "TEST-UID": task.testUid || "250915",
-        appid: APP_ID,
-        appSecret: APP_SECRET,
+        appid: appId,
+        appSecret,
         orgCode: task.orgCode || "",
         sign,
         token: task.token || ""
@@ -156,6 +163,20 @@ class BookingService extends EventEmitter {
     }
 
     return data;
+  }
+
+  async queryDoctors(task) {
+    return (await this.apiCall(task, "basic/doctor/queryKqyyDoctor", {})).data || [];
+  }
+
+  async queryPatients(task) {
+    const regionId = task.regionId || task.hospRegionCode || task.orgCode || "";
+    const payload = {
+      orgId: task.orgId || regionId,
+      regionId,
+      isAll: 1
+    };
+    return (await this.apiCall(task, "bz/patient/queryPatientByUser", payload)).data || [];
   }
 
   async querySchedule(task) {

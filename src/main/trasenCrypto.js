@@ -1,8 +1,12 @@
 const crypto = require("node:crypto");
 
-const APP_ID = process.env.TRASEN_APP_ID || "";
-const APP_SECRET = process.env.TRASEN_APP_SECRET || "";
-const AES_KEY = process.env.TRASEN_AES_KEY || "";
+function getConfig() {
+  return {
+    appId: process.env.TRASEN_APP_ID || "",
+    appSecret: process.env.TRASEN_APP_SECRET || "",
+    aesKey: process.env.TRASEN_AES_KEY || ""
+  };
+}
 
 function zeroPad(buffer, blockSize = 16) {
   const remainder = buffer.length % blockSize;
@@ -22,18 +26,24 @@ function zeroUnpad(buffer) {
 }
 
 function ensureCryptoConfigured() {
+  const { appId, appSecret, aesKey } = getConfig();
   const missing = [];
-  if (!APP_ID) missing.push("TRASEN_APP_ID");
-  if (!APP_SECRET) missing.push("TRASEN_APP_SECRET");
-  if (!AES_KEY) missing.push("TRASEN_AES_KEY");
+  if (!appId) missing.push("TRASEN_APP_ID");
+  if (!appSecret) missing.push("TRASEN_APP_SECRET");
+  if (!aesKey) missing.push("TRASEN_AES_KEY");
   if (missing.length > 0) {
-    throw new Error("Missing Trasen secrets: " + missing.join(", "));
+    throw new Error(
+      "还没有完整捕获页面加密参数: " +
+        missing.join(", ") +
+        "。请先启动采集环境，然后在 PC 微信里重新进入或刷新挂号页面，让页面资源和接口请求都经过代理。"
+    );
   }
 }
 
 function encryptPayload(rawText) {
   ensureCryptoConfigured();
-  const cipher = crypto.createCipheriv("aes-128-ecb", Buffer.from(AES_KEY, "utf8"), null);
+  const { aesKey } = getConfig();
+  const cipher = crypto.createCipheriv("aes-128-ecb", Buffer.from(aesKey, "utf8"), null);
   cipher.setAutoPadding(false);
   const encrypted = Buffer.concat([
     cipher.update(zeroPad(Buffer.from(rawText, "utf8"))),
@@ -44,7 +54,8 @@ function encryptPayload(rawText) {
 
 function decryptPayload(rawText) {
   ensureCryptoConfigured();
-  const decipher = crypto.createDecipheriv("aes-128-ecb", Buffer.from(AES_KEY, "utf8"), null);
+  const { aesKey } = getConfig();
+  const decipher = crypto.createDecipheriv("aes-128-ecb", Buffer.from(aesKey, "utf8"), null);
   decipher.setAutoPadding(false);
   const decrypted = Buffer.concat([
     decipher.update(Buffer.from(rawText, "base64")),
@@ -55,17 +66,16 @@ function decryptPayload(rawText) {
 
 function requestSign(bodyText, orgCode) {
   ensureCryptoConfigured();
+  const { appId, appSecret } = getConfig();
   return crypto
     .createHash("md5")
-    .update(APP_ID + bodyText + (orgCode || "") + APP_SECRET, "utf8")
+    .update(appId + bodyText + (orgCode || "") + appSecret, "utf8")
     .digest("hex")
     .toUpperCase();
 }
 
 module.exports = {
-  APP_ID,
-  APP_SECRET,
-  AES_KEY,
+  getConfig,
   ensureCryptoConfigured,
   encryptPayload,
   decryptPayload,

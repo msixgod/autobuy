@@ -18,6 +18,19 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+.app-shell,
+.sidebar,
+.main-layout,
+.panel,
+.status-card,
+.info-box,
+.hit-box,
+.log-box {
+  min-width: 0;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -113,6 +126,19 @@ body {
   padding: 28px;
 }
 
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.topbar h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
 .hero {
   display: flex;
   justify-content: space-between;
@@ -147,6 +173,13 @@ body {
   grid-template-columns: 1.1fr 0.9fr;
   gap: 18px;
   margin-bottom: 18px;
+}
+
+.panel-grid > *,
+.form-grid > *,
+.two-col > *,
+.summary-grid > * {
+  min-width: 0;
 }
 
 .panel {
@@ -216,6 +249,7 @@ label {
 input,
 select,
 textarea {
+  min-width: 0;
   width: 100%;
   border-radius: 14px;
   border: 1px solid rgba(31, 41, 55, 0.12);
@@ -284,6 +318,8 @@ button:hover {
   padding: 14px 16px;
   background: var(--panel-strong);
   border: 1px solid rgba(31, 41, 55, 0.08);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .hit-box a {
@@ -334,6 +370,8 @@ button:hover {
   max-height: 240px;
   overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-family: "Consolas", "SFMono-Regular", monospace;
   font-size: 12px;
   line-height: 1.55;
